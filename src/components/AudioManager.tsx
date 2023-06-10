@@ -180,6 +180,22 @@ export function AudioManager(props: { transcriber: Transcriber }) {
         }
     };
 
+    const setAudioFromBlob = async (blob: Blob) => {
+        const blobUrl = URL.createObjectURL(blob);
+
+        const audioCTX = new AudioContext({
+            sampleRate: Constants.SAMPLING_RATE,
+        });
+
+        const data = await blob.arrayBuffer();
+        const decoded = await audioCTX.decodeAudioData(data);
+        setAudioData({
+            buffer: decoded,
+            url: blobUrl,
+            source: AudioSource.URL,
+        });
+    };
+
     // When URL changes, download audio
     useEffect(() => {
         if (audioDownloadUrl) {
@@ -214,6 +230,14 @@ export function AudioManager(props: { transcriber: Transcriber }) {
                                 url: blobUrl,
                                 source: AudioSource.FILE,
                             });
+                        }}
+                    />
+                    <VerticalBar />
+                    <MicrophoneTile
+                        text={"From microphone"}
+                        onRecorded={(blob) => {
+                            props.transcriber.onInputChange();
+                            setAudioFromBlob(blob);
                         }}
                     />
                 </div>
@@ -544,6 +568,56 @@ function FileTile(props: {
                 text={props.text}
                 onClick={() => elem.click()}
             />
+        </>
+    );
+}
+
+function MicrophoneTile(props: {
+    text: string;
+    onRecorded: (data: Blob) => void;
+}) {
+    const [started, setStarted] = useState(false);
+    const [stream, setStream] = useState<MediaStream | null>(null);
+    const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
+
+    const handleClick = async () => {
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: true,
+        });
+        const recorder = new MediaRecorder(stream);
+
+        setStream(stream);
+        setRecorder(recorder);
+    };
+    const handleStartOrStop = async () => {
+        if (!stream || !recorder) return;
+
+        if (started) {
+            // Trigger `ondataavailable`
+            recorder.stop();
+
+            stream.getTracks().forEach((track) => track.stop());
+            setStream(null);
+            setRecorder(null);
+            setStarted(false);
+            return;
+        }
+
+        recorder.ondataavailable = ({ data }) => props.onRecorded(data);
+        // `undefined` means do not slice, until the end of the recording
+        recorder.start(undefined);
+
+        setStarted(true);
+    };
+
+    return (
+        <>
+            <Tile icon={<>🎤</>} text={props.text} onClick={handleClick} />
+            {stream && (
+                <button onClick={handleStartOrStop}>
+                    {started ? "⏹️" : "⏺️"}
+                </button>
+            )}
         </>
     );
 }
